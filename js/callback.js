@@ -2,31 +2,34 @@ import { supabase } from "./supabaseClient.js";
 import { consumePendingUsername } from "./auth.js";
 import { createMyProfile } from "./profiles.js";
 
-/**
- * Call this on your auth callback page/route.
- * It exchanges the URL code for a session.
- * Then it creates the profile row using the pending username (if any).
- */
 export async function handleAuthCallback({ successRedirect = "/#/" } = {}) {
-    const { error } = await supabase.auth.exchangeCodeForSession(window.location.href);
+  // Supabase puts the auth code in the query string (location.search),
+  // even if you're using a hash route.
+  const params = new URLSearchParams(window.location.search);
+  const code = params.get("code");
 
-    if (error) {
-        console.error(error);
-        return { ok: false, message: "Verification link invalid or expired." };
+  // If there's no code, we're not on a real callback hit.
+  if (!code) return { ok: true, skipped: true };
+
+  const { error } = await supabase.auth.exchangeCodeForSession(code);
+
+  if (error) {
+    console.error(error);
+    return { ok: false, message: error.message || "Verification link invalid or expired." };
+  }
+
+  const pendingUsername = consumePendingUsername();
+  if (pendingUsername) {
+    try {
+      await createMyProfile(pendingUsername);
+    } catch (e) {
+      console.error(e);
     }
+  }
 
-    // After verification, user is logged in => safe to create profile row
-    const pendingUsername = consumePendingUsername();
-    if (pendingUsername) {
-        try {
-            await createMyProfile(pendingUsername);
-        } catch (e) {
-            // If profile already exists or username taken due to a race, you'll see it here.
-            console.error(e);
-            // You can choose to show a screen asking them to pick a username now.
-        }
-    }
+  // Clean URL: remove ?code=... from address bar (optional but nice)
+  window.history.replaceState({}, document.title, "/#/");
 
-    window.location.href = successRedirect;
-    return { ok: true };
+  window.location.href = successRedirect;
+  return { ok: true };
 }
