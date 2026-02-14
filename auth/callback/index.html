@@ -2,59 +2,95 @@
 <html>
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Signing you in…</title>
   </head>
   <body>
-    <p id="status">Signing you in…</p>
+    <p id="status">Finishing sign-in…</p>
+    <pre id="log" style="white-space: pre-wrap"></pre>
 
     <script type="module">
-      // Adjust path if your files are not in /js/
-      import { supabase } from "../../../js/supabaseClient.js";
+      import { supabase } from "../../js/supabaseClient.js"; // <-- adjust if needed
 
       const statusEl = document.getElementById("status");
-
-      function hashParams() {
-        const raw = window.location.hash.startsWith("#")
-          ? window.location.hash.slice(1)
-          : window.location.hash;
-        return new URLSearchParams(raw);
-      }
+      const logEl = document.getElementById("log");
+      const log = (msg) => (logEl.textContent += msg + "\n");
 
       async function run() {
-        // 1) PKCE: ?code=...
-        const qs = new URLSearchParams(window.location.search);
-        const code = qs.get("code");
-        if (code) {
-          const { error } = await supabase.auth.exchangeCodeForSession(code);
-          if (error) {
-            statusEl.textContent = "Exchange failed: " + error.message;
+        try {
+          log("URL: " + location.href);
+
+          // 1) Handle Supabase hash errors (otp_expired etc.)
+          const hp = new URLSearchParams((location.hash || "").replace(/^#/, ""));
+          const hashErr = hp.get("error_code") || hp.get("error");
+          const hashDesc = hp.get("error_description");
+          if (hashErr || hashDesc) {
+            statusEl.textContent = `Verification failed: ${hashErr || ""} ${hashDesc || ""}`.trim();
+            log(statusEl.textContent);
             return;
           }
-          statusEl.textContent = "Success! Redirecting…";
-          window.location.replace("../../");
-          return;
-        }
 
-        // 2) Implicit: #access_token=...&refresh_token=...
-        const hp = hashParams();
-        const access_token = hp.get("access_token");
-        const refresh_token = hp.get("refresh_token");
-
-        if (access_token && refresh_token) {
-          const { error } = await supabase.auth.setSession({ access_token, refresh_token });
-          if (error) {
-            statusEl.textContent = "Session set failed: " + error.message;
+          // 2) Exchange code for session
+          const qs = new URLSearchParams(location.search);
+          const code = qs.get("code");
+          if (!code) {
+            statusEl.textContent = "Missing authentication code (?code=...).";
+            log(statusEl.textContent);
             return;
           }
-          statusEl.textContent = "Success! Redirecting…";
-          window.location.replace("../../");
-          return;
-        }
 
-        // 3) Nothing found
-        statusEl.textContent =
-          "No auth code or tokens found. Try the newest email link, or check Supabase redirect allowlist.";
+          statusEl.textContent = "Exchanging code for session…";
+          const { error: exErr } = await supabase.auth.exchangeCodeForSession(code);
+          if (exErr) {
+            statusEl.textContent = "Exchange failed: " + exErr.message;
+            log(statusEl.textContent);
+            return;
+          }
+
+          // 3) Get user + pending username
+          const { data: userData, error: userErr } = await supabase.auth.getUser();
+          if (userErr || !userData?.user) {
+            statusEl.textContent = "Could not read user after exchange.";
+            log(String(userErr?.message || "No user"));
+            return;
+          }
+
+          const user = userData.user;
+          const pendingUsername = (user.user_metadata?.pending_username || "").trim();
+          if (!pendingUsername) {
+            statusEl.textContent =
+              "No pending_username found in metadata. Please sign up again.";
+            log("user_metadata: " + JSON.stringify(user.user_metadata || {}, null, 2));
+            return;
+          }
+
+          // 4) Insert into profiles (RLS off so this should work if called)
+          statusEl.textContent = "Creating profile…";
+          const payload = {
+            user_id: user.id,
+            username: pendingUsername,
+            username_lower: pendingUsername.toLowerCase(),
+          };
+          log("Insert payload: " + JSON.stringify(payload));
+
+          const { error: insErr } = await supabase.from("profiles").insert(payload);
+          if (insErr) {
+            statusEl.textContent = "Profile insert failed: " + insErr.message;
+            log("Insert error: " + JSON.stringify(insErr, null, 2));
+            return;
+          }
+
+          // 5) Clear pending_username (optional)
+          await supabase.auth.updateUser({
+            data: { pending_username: null, display_name: pendingUsername },
+          });
+
+          statusEl.textContent = "Done! Redirecting…";
+          setTimeout(() => location.replace("../../"), 300);
+        } catch (e) {
+          statusEl.textContent = "Callback crashed: " + (e?.message || String(e));
+          log(statusEl.textContent);
+        }
       }
 
       run();
