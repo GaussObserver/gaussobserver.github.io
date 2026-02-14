@@ -1,20 +1,26 @@
 import { supabase } from "./supabaseClient.js";
-
-const PENDING_DISPLAY_NAME_KEY = "pending_display_name";
+import { isUsernameAvailable } from "./profiles.js";
 
 /**
  * Starts sign-up with email+password.
- * Stores display name locally so we can write it after verification.
+ *
+ * We store the requested username in auth metadata as `pending_username`
+ * so the callback page can create the row in `profiles` after email verification.
  */
-export async function startSignUp(displayName, email, password) {
-  const dn = (displayName || "").trim();
-  if (!dn) throw new Error("Display name required");
+export async function startSignUp(username, email, password) {
+  const u = (username || "").trim();
+  if (!u) throw new Error("Username required");
+
+  // UX check only (DB unique constraint is the real enforcement)
+  const available = await isUsernameAvailable(u);
+  if (!available) throw new Error("Username already taken");
 
   const { data, error } = await supabase.auth.signUp({
     email,
     password,
     options: {
-      data: { display_name: dn },
+      // Store requested username so it persists through email verification
+      data: { pending_username: u },
       emailRedirectTo: "https://gaussobserver.github.io/auth/callback",
     },
   });
@@ -39,6 +45,9 @@ export async function logOut() {
   if (error) throw error;
 }
 
+/**
+ * Returns the current auth user or null.
+ */
 export async function getCurrentUser() {
   const { data, error } = await supabase.auth.getUser();
 
@@ -49,18 +58,11 @@ export async function getCurrentUser() {
   return data.user ?? null;
 }
 
-export function consumePendingDisplayName() {
-  const dn = localStorage.getItem(PENDING_DISPLAY_NAME_KEY);
-  if (dn) localStorage.removeItem(PENDING_DISPLAY_NAME_KEY);
-  return dn;
-}
-
-export async function setMyDisplayName(displayName) {
-  const dn = (displayName || "").trim();
-  if (!dn) return;
-
-  const { error } = await supabase.auth.updateUser({
-    data: { display_name: dn },
-  });
+/**
+ * Optionally set/clear metadata after verification.
+ * (We use this in callback.js to remove pending_username and set display_name.)
+ */
+export async function updateMyMetadata(data) {
+  const { error } = await supabase.auth.updateUser({ data });
   if (error) throw error;
 }
