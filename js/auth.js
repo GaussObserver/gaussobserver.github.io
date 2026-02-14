@@ -2,16 +2,14 @@ import { supabase } from "./supabaseClient.js";
 import { isUsernameAvailable } from "./profiles.js";
 
 /**
- * Starts sign-up with email+password.
- *
- * We store the requested username in auth metadata as `pending_username`
- * so the callback page can create the row in `profiles` after email verification.
+ * Start signup and store pending username in user_metadata.
+ * This survives email verification even if the email link opens in a different browser/device.
  */
 export async function startSignUp(username, email, password) {
   const u = (username || "").trim();
   if (!u) throw new Error("Username required");
 
-  // UX check only (DB unique constraint is the real enforcement)
+  // UX-only check (DB constraint is the real enforcement)
   const available = await isUsernameAvailable(u);
   if (!available) throw new Error("Username already taken");
 
@@ -19,7 +17,6 @@ export async function startSignUp(username, email, password) {
     email,
     password,
     options: {
-      // Store requested username so it persists through email verification
       data: { pending_username: u },
       emailRedirectTo: "https://gaussobserver.github.io/auth/callback",
     },
@@ -46,12 +43,12 @@ export async function logOut() {
 }
 
 /**
- * Returns the current auth user or null.
+ * Current auth user or null.
  */
 export async function getCurrentUser() {
   const { data, error } = await supabase.auth.getUser();
 
-  // Treat missing session as "logged out", not fatal
+  // Treat missing session as "logged out"
   if (error && (error.message || "").includes("Auth session missing")) return null;
   if (error) throw error;
 
@@ -59,8 +56,7 @@ export async function getCurrentUser() {
 }
 
 /**
- * Optionally set/clear metadata after verification.
- * (We use this in callback.js to remove pending_username and set display_name.)
+ * Helper to update metadata (used in callback.js).
  */
 export async function updateMyMetadata(data) {
   const { error } = await supabase.auth.updateUser({ data });
