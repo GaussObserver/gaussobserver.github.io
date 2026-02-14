@@ -6,94 +6,18 @@
     <title>Signing you in…</title>
   </head>
   <body>
-    <p id="status">Finishing sign-in…</p>
-    <pre id="log" style="white-space: pre-wrap"></pre>
+    <script>
+  document.body.innerHTML = `
+    <pre style="white-space: pre-wrap; word-break: break-word;">
+href: ${location.href}
 
-    <script type="module">
-      import { supabase } from "../../js/supabaseClient.js"; // <-- adjust if needed
+origin: ${location.origin}
+pathname: ${location.pathname}
+search: ${location.search}
+hash: ${location.hash}
+    </pre>
+  `;
+</script>
 
-      const statusEl = document.getElementById("status");
-      const logEl = document.getElementById("log");
-      const log = (msg) => (logEl.textContent += msg + "\n");
-
-      async function run() {
-        try {
-          log("URL: " + location.href);
-
-          // 1) Handle Supabase hash errors (otp_expired etc.)
-          const hp = new URLSearchParams((location.hash || "").replace(/^#/, ""));
-          const hashErr = hp.get("error_code") || hp.get("error");
-          const hashDesc = hp.get("error_description");
-          if (hashErr || hashDesc) {
-            statusEl.textContent = `Verification failed: ${hashErr || ""} ${hashDesc || ""}`.trim();
-            log(statusEl.textContent);
-            return;
-          }
-
-          // 2) Exchange code for session
-          const qs = new URLSearchParams(location.search);
-          const code = qs.get("code");
-          if (!code) {
-            statusEl.textContent = "Missing authentication code (?code=...).";
-            log(statusEl.textContent);
-            return;
-          }
-
-          statusEl.textContent = "Exchanging code for session…";
-          const { error: exErr } = await supabase.auth.exchangeCodeForSession(code);
-          if (exErr) {
-            statusEl.textContent = "Exchange failed: " + exErr.message;
-            log(statusEl.textContent);
-            return;
-          }
-
-          // 3) Get user + pending username
-          const { data: userData, error: userErr } = await supabase.auth.getUser();
-          if (userErr || !userData?.user) {
-            statusEl.textContent = "Could not read user after exchange.";
-            log(String(userErr?.message || "No user"));
-            return;
-          }
-
-          const user = userData.user;
-          const pendingUsername = (user.user_metadata?.pending_username || "").trim();
-          if (!pendingUsername) {
-            statusEl.textContent =
-              "No pending_username found in metadata. Please sign up again.";
-            log("user_metadata: " + JSON.stringify(user.user_metadata || {}, null, 2));
-            return;
-          }
-
-          // 4) Insert into profiles (RLS off so this should work if called)
-          statusEl.textContent = "Creating profile…";
-          const payload = {
-            user_id: user.id,
-            username: pendingUsername,
-            username_lower: pendingUsername.toLowerCase(),
-          };
-          log("Insert payload: " + JSON.stringify(payload));
-
-          const { error: insErr } = await supabase.from("profiles").insert(payload);
-          if (insErr) {
-            statusEl.textContent = "Profile insert failed: " + insErr.message;
-            log("Insert error: " + JSON.stringify(insErr, null, 2));
-            return;
-          }
-
-          // 5) Clear pending_username (optional)
-          await supabase.auth.updateUser({
-            data: { pending_username: null, display_name: pendingUsername },
-          });
-
-          statusEl.textContent = "Done! Redirecting…";
-          setTimeout(() => location.replace("../../"), 300);
-        } catch (e) {
-          statusEl.textContent = "Callback crashed: " + (e?.message || String(e));
-          log(statusEl.textContent);
-        }
-      }
-
-      run();
-    </script>
   </body>
 </html>
