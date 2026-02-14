@@ -61,9 +61,15 @@ export async function logOut() {
  * Returns the current auth user or null.
  */
 export async function getCurrentUser() {
-    const { data: { user }, error } = await supabase.auth.getUser();
-    if (error) throw error;
-    return user ?? null;
+  const { data, error } = await supabase.auth.getUser();
+
+  // If there's no session, treat as logged out (not an app-breaking error)
+  if (error && (error.message || "").includes("Auth session missing")) {
+    return null;
+  }
+
+  if (error) throw error;
+  return data.user ?? null;
 }
 
 /**
