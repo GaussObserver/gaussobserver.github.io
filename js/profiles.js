@@ -1,9 +1,8 @@
 import { supabase } from "./supabaseClient.js";
 
 /**
- * Returns true if the username is not taken (case-insensitive).
- *
- * Requires profiles.username_lower to exist OR you can change this to use ilike on username.
+ * Case-insensitive availability check.
+ * Prefers `username_lower` if present; falls back to ilike on `username`.
  */
 export async function isUsernameAvailable(username) {
   const u = (username || "").trim();
@@ -11,19 +10,32 @@ export async function isUsernameAvailable(username) {
 
   const lower = u.toLowerCase();
 
+  // Try username_lower first (best if you have a UNIQUE index on it)
+  {
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("user_id")
+      .eq("username_lower", lower)
+      .maybeSingle();
+
+    if (!error) return data === null;
+
+    // If the column doesn't exist, fall through to ilike
+    const msg = String(error.message || "");
+    if (!msg.toLowerCase().includes("username_lower")) throw error;
+  }
+
+  // Fallback: case-insensitive match using ilike (exact match if no wildcards)
   const { data, error } = await supabase
     .from("profiles")
     .select("user_id")
-    .eq("username_lower", lower)
+    .ilike("username", u)
     .maybeSingle();
 
   if (error) throw error;
   return data === null;
 }
 
-/**
- * Returns the logged-in user's profile row or null if not logged in.
- */
 export async function getMyProfile() {
   const { data: { user }, error: userError } = await supabase.auth.getUser();
   if (userError) throw userError;
@@ -40,8 +52,8 @@ export async function getMyProfile() {
 }
 
 /**
- * Creates the profile row for the currently logged-in user.
- * Case-insensitive uniqueness is enforced by a UNIQUE index on username_lower.
+ * Create the currently logged-in user's profile row.
+ * Attempts to write username_lower if the column exists.
  */
 export async function createMyProfile(username) {
   const u = (username || "").trim();
@@ -53,19 +65,29 @@ export async function createMyProfile(username) {
 
   const lower = u.toLowerCase();
 
+  // Try inserting with username_lower first
+  {
+    const { error } = await supabase
+      .from("profiles")
+      .insert({ user_id: user.id, username: u, username_lower: lower });
+
+    if (!error) return;
+
+    // Unique violation => username taken
+    if (error.code === "23505") throw new Error("Username already taken");
+
+    // If username_lower column doesn't exist, try without it
+    const msg = String(error.message || "");
+    if (!msg.toLowerCase().includes("username_lower")) throw error;
+  }
+
+  // Fallback insert without username_lower
   const { error } = await supabase
     .from("profiles")
-    .insert({
-      user_id: user.id,
-      username: u,
-      username_lower: lower,
-    });
+    .insert({ user_id: user.id, username: u });
 
   if (error) {
-    // Postgres unique violation
-    if (error.code === "23505") {
-      throw new Error("Username already taken");
-    }
+    if (error.code === "23505") throw new Error("Username already taken");
     throw error;
   }
 }
