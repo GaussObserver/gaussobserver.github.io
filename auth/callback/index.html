@@ -3,19 +3,41 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Auth Callback</title>
+    <title>Signing you in...</title>
   </head>
   <body>
-    <p>Finishing sign-in…</p>
+    <p id="status">Finishing sign-in...</p>
 
     <script type="module">
-      import { handleAuthCallback } from "../../callback.js";
-      // If your JS lives in /js/, adjust path accordingly.
+      import { supabase } from "../../supabaseClient.js";
 
-      const res = await handleAuthCallback({ successRedirect: "/#/" });
-      if (!res.ok) {
-        document.body.innerHTML = `<p>Callback error: ${res.message}</p>`;
+      const status = document.getElementById("status");
+
+      async function finishAuth() {
+        const params = new URLSearchParams(window.location.search);
+        const code = params.get("code");
+
+        if (!code) {
+          status.textContent = "Missing authentication code.";
+          return;
+        }
+
+        const { error } = await supabase.auth.exchangeCodeForSession(code);
+
+        if (error) {
+          status.textContent = "Verification failed: " + error.message;
+          return;
+        }
+
+        status.textContent = "Success! Redirecting...";
+
+        // small delay so user sees success
+        setTimeout(() => {
+          window.location.href = "/";
+        }, 300);
       }
+
+      finishAuth();
     </script>
   </body>
 </html>
