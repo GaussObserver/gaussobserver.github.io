@@ -2,42 +2,62 @@
 <html>
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Signing you in...</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Signing you in…</title>
   </head>
   <body>
-    <p id="status">Finishing sign-in...</p>
+    <p id="status">Signing you in…</p>
 
     <script type="module">
+      // Adjust path if your files are not in /js/
       import { supabase } from "../../../js/supabaseClient.js";
 
-      const status = document.getElementById("status");
+      const statusEl = document.getElementById("status");
 
-      async function finishAuth() {
-        const params = new URLSearchParams(window.location.search);
-        const code = params.get("code");
-
-        if (!code) {
-          status.textContent = "Missing authentication code.";
-          return;
-        }
-
-        const { error } = await supabase.auth.exchangeCodeForSession(code);
-
-        if (error) {
-          status.textContent = "Verification failed: " + error.message;
-          return;
-        }
-
-        status.textContent = "Success! Redirecting...";
-
-        // small delay so user sees success
-        setTimeout(() => {
-          window.location.href = "/";
-        }, 300);
+      function hashParams() {
+        const raw = window.location.hash.startsWith("#")
+          ? window.location.hash.slice(1)
+          : window.location.hash;
+        return new URLSearchParams(raw);
       }
 
-      finishAuth();
+      async function run() {
+        // 1) PKCE: ?code=...
+        const qs = new URLSearchParams(window.location.search);
+        const code = qs.get("code");
+        if (code) {
+          const { error } = await supabase.auth.exchangeCodeForSession(code);
+          if (error) {
+            statusEl.textContent = "Exchange failed: " + error.message;
+            return;
+          }
+          statusEl.textContent = "Success! Redirecting…";
+          window.location.replace("../../");
+          return;
+        }
+
+        // 2) Implicit: #access_token=...&refresh_token=...
+        const hp = hashParams();
+        const access_token = hp.get("access_token");
+        const refresh_token = hp.get("refresh_token");
+
+        if (access_token && refresh_token) {
+          const { error } = await supabase.auth.setSession({ access_token, refresh_token });
+          if (error) {
+            statusEl.textContent = "Session set failed: " + error.message;
+            return;
+          }
+          statusEl.textContent = "Success! Redirecting…";
+          window.location.replace("../../");
+          return;
+        }
+
+        // 3) Nothing found
+        statusEl.textContent =
+          "No auth code or tokens found. Try the newest email link, or check Supabase redirect allowlist.";
+      }
+
+      run();
     </script>
   </body>
 </html>
