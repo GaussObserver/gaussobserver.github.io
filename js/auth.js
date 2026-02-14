@@ -10,13 +10,11 @@ export async function startSignUp(displayName, email, password) {
   const dn = (displayName || "").trim();
   if (!dn) throw new Error("Display name required");
 
-  localStorage.setItem(PENDING_DISPLAY_NAME_KEY, dn);
-
   const { data, error } = await supabase.auth.signUp({
     email,
     password,
     options: {
-      // IMPORTANT: Prefer a real path callback (see below)
+      data: { display_name: dn },
       emailRedirectTo: "https://gaussobserver.github.io/auth/callback",
     },
   });
