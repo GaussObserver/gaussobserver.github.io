@@ -3,11 +3,11 @@ import { createMyProfile } from "./profiles.js";
 import { updateMyMetadata } from "./auth.js";
 
 /**
- * Run this on the callback page.
- * - Exchange code -> session
- * - Read pending_username from user metadata
- * - Insert into profiles
- * - Set display_name (optional) and clear pending_username
+ * Runs on /auth/callback
+ * 1) Exchange ?code= for a session
+ * 2) Read pending_username from user metadata
+ * 3) Insert into profiles
+ * 4) Clear pending_username (+ optionally set display_name)
  */
 export async function handleAuthCallback({ successRedirect = "/#/" } = {}) {
   const params = new URLSearchParams(window.location.search);
@@ -17,31 +17,33 @@ export async function handleAuthCallback({ successRedirect = "/#/" } = {}) {
   const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
   if (exchangeError) return { ok: false, message: exchangeError.message || "Verification failed." };
 
-  const { data: { user }, error: userError } = await supabase.auth.getUser();
+  const { data: userData, error: userError } = await supabase.auth.getUser();
   if (userError) return { ok: false, message: userError.message || "Could not read user after verification." };
+
+  const user = userData?.user;
   if (!user) return { ok: false, message: "No user session after verification." };
 
-  const pendingUsername = user.user_metadata?.pending_username?.trim();
+  const pendingUsername = (user.user_metadata?.pending_username || "").trim();
 
-  if (pendingUsername) {
-    try {
-      await createMyProfile(pendingUsername);
-
-      // Optional: store display_name for convenience + clear pending_username
-      await updateMyMetadata({
-        display_name: pendingUsername,
-        pending_username: null,
-      });
-    } catch (e) {
-      console.error(e);
-      // If username is taken due to race, tell the user
-      return { ok: false, message: e.message || "Could not create profile." };
-    }
-  } else {
-    // Not fatal, but means we can't create a profile automatically
-    console.warn("No pending_username found in user metadata.");
+  if (!pendingUsername) {
+    // Not fatal, but means we don't know what username to create.
+    // You can redirect to a "pick username" page if you want.
+    return { ok: false, message: "No pending username found. Please sign up again." };
   }
 
-  window.location.href = successRedirect;
+  try {
+    await createMyProfile(pendingUsername);
+
+    // Optional convenience: store display_name and clear pending_username
+    await updateMyMetadata({
+      display_name: pendingUsername,
+      pending_username: null,
+    });
+  } catch (e) {
+    console.error(e);
+    return { ok: false, message: e.message || "Could not create profile." };
+  }
+
+  window.location.replace(successRedirect);
   return { ok: true };
 }
