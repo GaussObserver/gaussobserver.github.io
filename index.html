@@ -1,1 +1,148 @@
-<h1>GAUSS</h1>
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>GAUSS</title>
+    <link href="style.css" rel="stylesheet" />
+  </head>
+
+  <body>
+    <div class="content">
+      <div class="center_content">
+        <h1>GAUSS</h1>
+
+        <!-- Status / messages -->
+        <div id="authStatus" style="margin: 12px 0;"></div>
+
+        <!-- SIGN UP -->
+        <section id="signupSection" style="margin: 12px 0;">
+          <h2>Create account</h2>
+          <div>
+            <label>
+              Username<br />
+              <input id="username" type="text" autocomplete="username" />
+            </label>
+          </div>
+          <div>
+            <label>
+              Email<br />
+              <input id="email" type="email" autocomplete="email" />
+            </label>
+          </div>
+          <div>
+            <label>
+              Password<br />
+              <input id="password" type="password" autocomplete="new-password" />
+            </label>
+          </div>
+          <button id="signupBtn" type="button" style="margin-top: 8px;">
+            Sign up
+          </button>
+        </section>
+
+        <hr style="width: 100%; max-width: 520px; margin: 18px 0;" />
+
+        <!-- LOG IN -->
+        <section id="loginSection" style="margin: 12px 0;">
+          <h2>Log in</h2>
+          <div>
+            <label>
+              Email<br />
+              <input id="loginEmail" type="email" autocomplete="email" />
+            </label>
+          </div>
+          <div>
+            <label>
+              Password<br />
+              <input
+                id="loginPassword"
+                type="password"
+                autocomplete="current-password"
+              />
+            </label>
+          </div>
+          <button id="loginBtn" type="button" style="margin-top: 8px;">
+            Log in
+          </button>
+        </section>
+
+        <!-- LOG OUT -->
+        <section id="logoutSection" style="margin: 12px 0;">
+          <button id="logoutBtn" type="button">Log out</button>
+        </section>
+
+        <!-- Optional: show profile -->
+        <section id="profileSection" style="margin: 12px 0;">
+          <h2>Profile</h2>
+          <pre id="profileBox" style="white-space: pre-wrap;"></pre>
+        </section>
+
+        <!-- Callback screen (shown briefly on email verification redirects) -->
+        <section id="callbackSection" style="display:none; margin-top: 18px;">
+          <h2>Finishing sign-in…</h2>
+          <p id="callbackMsg">Completing verification.</p>
+        </section>
+      </div>
+    </div>
+
+    <!-- Your existing button wiring -->
+    <script type="module" src="./js/main.js"></script>
+
+    <!-- Minimal hash-route support for "#/auth/callback" -->
+    <script type="module">
+      import { handleAuthCallback } from "./js/callback.js";
+      import { getCurrentUser } from "./js/auth.js";
+      import { getMyProfile } from "./js/profiles.js";
+
+      const authStatus = document.getElementById("authStatus");
+      const profileBox = document.getElementById("profileBox");
+
+      const callbackSection = document.getElementById("callbackSection");
+      const callbackMsg = document.getElementById("callbackMsg");
+
+      async function refreshUI() {
+        try {
+          const user = await getCurrentUser();
+          authStatus.textContent = user
+            ? `Signed in as: ${user.email}`
+            : "Not signed in.";
+
+          if (user) {
+            try {
+              const profile = await getMyProfile();
+              profileBox.textContent = profile
+                ? JSON.stringify(profile, null, 2)
+                : "(No profile row yet)";
+            } catch (e) {
+              profileBox.textContent = `Profile load error: ${e.message}`;
+            }
+          } else {
+            profileBox.textContent = "";
+          }
+        } catch (e) {
+          authStatus.textContent = `Auth error: ${e.message}`;
+          profileBox.textContent = "";
+        }
+      }
+
+      async function route() {
+        const hash = window.location.hash || "#/";
+        if (hash.startsWith("#/auth/callback")) {
+          callbackSection.style.display = "block";
+          callbackMsg.textContent = "Completing verification…";
+
+          const result = await handleAuthCallback({ successRedirect: "/#/" });
+          if (!result.ok) {
+            callbackMsg.textContent = result.message || "Callback failed.";
+            return;
+          }
+        }
+        await refreshUI();
+      }
+
+      window.addEventListener("hashchange", route);
+      route();
+    </script>
+  </body>
+</html>
