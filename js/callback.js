@@ -4,7 +4,6 @@ import { consumePendingDisplayName, setMyDisplayName } from "./auth.js";
 /**
  * Run this on the callback page.
  * Exchanges the code for a session, then writes display_name into user metadata.
- */
 export async function handleAuthCallback({ successRedirect = "/#/" } = {}) {
   const params = new URLSearchParams(window.location.search);
   const code = params.get("code");
@@ -35,3 +34,16 @@ export async function handleAuthCallback({ successRedirect = "/#/" } = {}) {
   window.location.href = successRedirect;
   return { ok: true };
 }
+*/
+export async function handleAuthCallback({ successRedirect = "/#/" } = {}) {
+  const params = new URLSearchParams(window.location.search);
+  const code = params.get("code");
+  if (!code) return { ok: false, message: "Missing auth code in URL." };
+
+  const { error } = await supabase.auth.exchangeCodeForSession(code);
+  if (error) return { ok: false, message: error.message || "Verification failed." };
+
+  window.location.href = successRedirect;
+  return { ok: true };
+}
+
