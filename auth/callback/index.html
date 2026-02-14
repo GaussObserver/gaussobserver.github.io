@@ -1,0 +1,21 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Auth Callback</title>
+  </head>
+  <body>
+    <p>Finishing sign-in…</p>
+
+    <script type="module">
+      import { handleAuthCallback } from "../../callback.js";
+      // If your JS lives in /js/, adjust path accordingly.
+
+      const res = await handleAuthCallback({ successRedirect: "/#/" });
+      if (!res.ok) {
+        document.body.innerHTML = `<p>Callback error: ${res.message}</p>`;
+      }
+    </script>
+  </body>
+</html>
